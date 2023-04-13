@@ -116,28 +116,29 @@ class Command(BaseCommand):
                     default_m2m_model_name = model_label.split('.')[-1]+"_"+field.attname
 
                     # if custom m2m model is given, it is mentioned in through attribute of field
+                    # if custom intermediate model is given
+                    # then we don't need to add that to m2m_models
+                    # because those models are available in apps.get_models()
+                    # so below the loop which is calling all models
+                    # will also call those explicit intermediate models
+                    # this if condition is only for intermediate models that are created by django
+                    # which won't appear in apps.get_models()
                     try:
                         m2m_field = getattr(model, field_name)
-                        m2m_model = getattr(m2m_field, 'through')
-                        m2m_model_label = m2m_model._meta.label_lower
-                        m2m_app_name, m2m_model_name = m2m_model_label.split('.')
+                        getattr(m2m_field, 'through')
                     except AttributeError:
-                        m2m_model_label = default_m2m_model_label
-                        m2m_model_name = default_m2m_model_name
-                        m2m_app_name = app_name
+                        m2m_fixture_label = default_m2m_model_label.replace('.', '_')
+                        related_model_fixture_label = field.related_model._meta.label_lower.replace('.', '_')
 
-                    m2m_fixture_label = m2m_model_label.replace('.', '_')
-                    related_model_fixture_label = field.related_model._meta.label_lower.replace('.', '_')
+                        # add m2m tables to self.m2m, at the end we will add these models to graph
+                        m2m_fixture_info = {
+                                'fixture_label': m2m_fixture_label,
+                                'model_label': default_m2m_model_label,
+                                'model_name': default_m2m_model_name,
+                                'app_name': app_name,
+                                }
 
-                    # add m2m tables to self.m2m, at the end we will add these models to graph
-                    m2m_fixture_info = {
-                            'fixture_label': m2m_fixture_label,
-                            'model_label': m2m_model_label,
-                            'model_name': m2m_model_name,
-                            'app_name': m2m_app_name,
-                            }
-
-                    m2m_models.append([m2m_fixture_info, fixture_label, related_model_fixture_label])
+                        m2m_models.append([m2m_fixture_info, fixture_label, related_model_fixture_label])
 
                 # relations with self are ignored because, django's loaddata command disables constraints
                 # while saving a fixture, and later checks the constraints
@@ -166,6 +167,9 @@ class Command(BaseCommand):
             return level
 
         all_models = apps.get_models()
+        # calls all models, including explicit intermediate models
+        # but does not call intermediate models that django created
+        # that is taken care in the build fn,
         for model in all_models:
             build(model)
         
