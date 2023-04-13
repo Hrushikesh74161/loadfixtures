@@ -226,8 +226,7 @@ class Command(BaseCommand):
         fixture_files = []
         pattern = r".*\/" + fixture_info["fixture_label"] + r"\..+"
         dirs_to_search = set(settings.FIXTURE_DIRS)
-        app_fixtures_folder = self.get_app_path(fixture_info["app_name"]) + "/fixtures"
-        dirs_to_search.add(app_fixtures_folder)
+        dirs_to_search.add(settings.BASE_DIR)
         for dir in dirs_to_search:
             for root, _, files in os.walk(dir):
                 for file in files:

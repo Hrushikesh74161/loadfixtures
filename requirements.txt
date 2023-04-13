@@ -2,10 +2,13 @@ asgiref==3.6.0
 black==23.3.0
 click==8.1.3
 Django==4.2
+django-js-asset==2.0.0
+django-mptt==0.14.0
 isort==5.12.0
 mypy-extensions==1.0.0
 packaging==23.1
 pathspec==0.11.1
+Pillow==9.5.0
 platformdirs==3.2.0
 pylibcheck==0.2.2
 sqlparse==0.4.3
