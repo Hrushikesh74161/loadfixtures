@@ -238,16 +238,17 @@ class Command(BaseCommand):
             call_command("loaddata", fixture, **options)
 
     def find_fixtures(self, fixture_info):
-        fixture_files = []
+        fixture_files = set()
         pattern = r".*\/" + fixture_info["fixture_label"] + r"\..+"
         dirs_to_search = set(settings.FIXTURE_DIRS)
-        dirs_to_search.add(settings.BASE_DIR)
+        app_fixture_path = self.get_app_path(fixture_info['app_name']) + '/fixtures'
+        dirs_to_search.add(app_fixture_path)
         for dir in dirs_to_search:
             for root, _, files in os.walk(dir):
                 for file in files:
                     match_path = root + "/" + file
                     if re.fullmatch(pattern, match_path):
-                        fixture_files.append(match_path)
+                        fixture_files.add(match_path)
 
         return fixture_files
 
