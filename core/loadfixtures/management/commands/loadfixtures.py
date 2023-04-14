@@ -247,6 +247,7 @@ class Command(BaseCommand):
     def get_db(self, model):
         if type(model) == str:
             model = apps.get_model(model)
+
         return router.db_for_write(model)
 
     def build_fixture_info(self, fixture_label, model_label, model_name, app_name):
