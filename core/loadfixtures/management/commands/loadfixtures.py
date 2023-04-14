@@ -62,12 +62,15 @@ class Command(BaseCommand):
     def setup(self, options, *args):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
+        self.check_apps()
         self.fixtures = set(options["fixtures"])
 
         del options["app_labels"]
         del options["fixtures"]
 
         self.build_graph()
+        # depends on lookuptable, thus calling after building graph
+        self.check_fixtures()
 
     def handle(self, *args, **options):
         self.setup(options, *args)
@@ -178,57 +181,39 @@ class Command(BaseCommand):
                 app_name,
             )
 
-            # if user gave either apps or fixtures
-            # then graph of only those models is created
-            # although lookuptable is populated with all models
-            # if not given all models graph is built
-            if self.app_labels or self.fixtures:
-                if (
-                    fixture_info["app_name"] not in self.app_labels
-                    and fixture_info["fixture_label"] not in self.fixtures
-                ):
-                    return level
-
-            # insert curr models' fixture_info in graph
-            self.graph[level].append(fixture_info)
+            self.add_to_graph(fixture_info, level)
 
             return level
 
         all_models = apps.get_models()
         # calls all models, including explicit intermediate models
         # but does not call intermediate models that django created
-        # that is taken care in the build fn,
+        # that is taken care by m2m_models
         for model in all_models:
             build(model)
 
         # populate graph with m2m models
         for m2m in m2m_models:
-            level = 1 + max(lookup_table[m2m[-1]], lookup_table[m2m[-2]])
-            lookup_table[m2m[0]["fixture_label"]] = level
-            self.graph[level].append(m2m[0])
+            level = 1 + max(self.lookup_table[m2m[-1]], self.lookup_table[m2m[-2]])
+
+            self.lookup_table[m2m[0]["fixture_label"]] = level
+
+            self.add_to_graph(m2m[0], None)
 
     @property
     def levels(self):
-        return max(key for key in self.graph)
+        try:
+            levels = max(key for key in self.graph)
+        except ValueError:
+            msg = "No fixtures to load."
+            raise Exception(msg)
+
+        return levels
 
     def loaddata(self, *args, **options):
         for level in range(self.levels + 1):
             for fixture_info in self.graph[level]:
-                # check if fixture_label's app or model is in exluded
-                if (
-                    fixture_info["model_label"] not in self.exclude
-                    and fixture_info["app_name"] not in self.exclude
-                ):
-                    # if user gave either apps or fixtures explicitly
-                    # then only load fixtures of models that are in user given apps and fixtures
-                    if self.app_labels or self.fixtures:
-                        if (
-                            fixture_info["app_name"] in self.app_labels
-                            or fixture_info["fixture_label"] in self.fixtures
-                        ):
-                            self.load_fixtures(fixture_info, *args, **options)
-                    else:
-                        self.load_fixtures(fixture_info, *args, **options)
+                self.load_fixtures(fixture_info, *args, **options)
 
     def load_fixtures(self, fixture_info, *args, **options):
         fixture_files = self.find_fixtures(fixture_info)
@@ -271,3 +256,60 @@ class Command(BaseCommand):
             "model_name": model_name,
             "app_name": app_name,
         }
+
+    def check_apps(self):
+        for app in self.app_labels:
+            # not using apps.is_installed, because
+            # app_name is probably different from what it is in INSTALLED_APPS
+            # this is the case if app is located in folder where settings file is present
+            # this is possible if app is started using django-admin
+            try:
+                apps.get_app_config(app)
+            except LookupError:
+                msg = "App '{}' is either not in INSTALLED_APPS or does not exist.".format(
+                    app
+                )
+                raise Exception(msg)
+
+            if app in self.exclude:
+                msg = (
+                    "App '{}' can't be in both apps to load and excluded apps.".format(
+                        app
+                    )
+                )
+                raise Exception(msg)
+
+    def check_fixtures(self):
+        for fixture in self.fixtures:
+            try:
+                self.lookup_table[fixture]
+            except KeyError:
+                msg = "No fixture named '{}'".format(fixture)
+                raise Exception(msg)
+
+    def add_to_graph(self, fixture_info, level):
+        # if user gave either apps or fixtures
+        # then graph of only those models is created
+        # although lookuptable is populated with all models
+        # if not graph of all models is built
+        if self.app_labels or self.fixtures:
+            if (
+                (
+                    fixture_info["app_name"] not in self.app_labels
+                    and fixture_info["fixture_label"] not in self.fixtures
+                )
+                or fixture_info["fixture_label"] in self.exclude
+                or fixture_info["app_name"] in self.exclude
+            ):
+                if (
+                    fixture_info["fixture_label"] in self.fixtures
+                    and fixture_info["app_name"] in self.exclude
+                ):
+                    msg = "Fixture {}'s app is in excluded apps.".format(
+                        fixture_info["fixture_label"]
+                    )
+                    raise Exception(msg)
+                return level
+
+        # insert curr models' fixture_info in graph
+        self.graph[level].append(fixture_info)
