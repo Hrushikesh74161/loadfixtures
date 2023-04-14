@@ -59,7 +59,7 @@ class Command(BaseCommand):
             help="Format of serialized data when reading from stdin.",
         )
 
-    def handle(self, *args, **options):
+    def setup(self, options, *args):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
         self.fixtures = set(options["fixtures"])
@@ -68,6 +68,9 @@ class Command(BaseCommand):
         del options["fixtures"]
 
         self.build_graph()
+
+    def handle(self, *args, **options):
+        self.setup(options, *args)
         self.loaddata(*args, **options)
 
     # topological sorting
@@ -133,7 +136,7 @@ class Command(BaseCommand):
                         )
 
                         # add m2m tables to self.m2m, at the end we will add these models to graph
-                        m2m_fixture_info = self.buil_fixture_info(
+                        m2m_fixture_info = self.build_fixture_info(
                             m2m_fixture_label,
                             default_m2m_model_label,
                             default_m2m_model_name,
@@ -168,13 +171,25 @@ class Command(BaseCommand):
             # adding curr models level to lookup table for later usage
             lookup_table[fixture_label] = level
 
-            # insert curr model's fixture info in graph
-            fixture_info = self.buil_fixture_info(
+            fixture_info = self.build_fixture_info(
                 fixture_label,
                 model_label,
                 model_name,
                 app_name,
             )
+
+            # if user gave either apps or fixtures
+            # then graph of only those models is created
+            # although lookuptable is populated with all models
+            # if not given all models graph is built
+            if self.app_labels or self.fixtures:
+                if (
+                    fixture_info["app_name"] not in self.app_labels
+                    and fixture_info["fixture_label"] not in self.fixtures
+                ):
+                    return level
+
+            # insert curr models' fixture_info in graph
             self.graph[level].append(fixture_info)
 
             return level
@@ -245,7 +260,7 @@ class Command(BaseCommand):
             model = apps.get_model(model)
         return router.db_for_write(model)
 
-    def buil_fixture_info(self, fixture_label, model_label, model_name, app_name):
+    def build_fixture_info(self, fixture_label, model_label, model_name, app_name):
         return {
             "fixture_label": fixture_label,
             "model_label": model_label,
