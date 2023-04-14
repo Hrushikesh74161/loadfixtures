@@ -11,7 +11,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("path", nargs="+", help="File/Paths to format.")
         parser.add_argument(
-            "-l", dest="line-length", default="88", help="No of characters per line."
+            "-l",
+            dest="line-length",
+            default="80",
+            help="No of characters per line.",
         )
         parser.add_argument(
             "-t", dest="target-version", default="py310", help="Python version."
@@ -25,18 +28,16 @@ class Command(BaseCommand):
         if not pylibcheck.checkPackage("black"):
             raise Exception('Package "black" not found, install using pip.')
         if not pylibcheck.checkPackage("isort"):
-            raise Exception(
-                'Package "isort" not found. Either install using pip or set -i flag for autoinstall.'
-            )
+            raise Exception('Package "isort" not found, install using pip')
 
         try:
             cmd = ["isort", *options["path"]]
-            output = subprocess.check_output(["isort", *options["path"]])
+            subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
-            raise Exception(output)
+            raise Exception(e)
 
         try:
             cmd = ["black", *options["flags"], *options["path"]]
-            subprocess.check_output(["black", *options["flags"], *options["path"]])
+            subprocess.check_output(cmd)
         except subprocess.CalledProcessError as e:
             raise Exception(e)

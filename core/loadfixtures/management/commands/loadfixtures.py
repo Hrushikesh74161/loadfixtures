@@ -133,9 +133,13 @@ class Command(BaseCommand):
                         m2m_field = getattr(model, field_name)
                         getattr(m2m_field, "through")
                     except AttributeError:
-                        m2m_fixture_label = default_m2m_model_label.replace(".", "_")
+                        m2m_fixture_label = default_m2m_model_label.replace(
+                            ".", "_"
+                        )
                         related_model_fixture_label = (
-                            field.related_model._meta.label_lower.replace(".", "_")
+                            field.related_model._meta.label_lower.replace(
+                                ".", "_"
+                            )
                         )
 
                         # add m2m tables to self.m2m, at the end we will add these models to graph
@@ -168,7 +172,8 @@ class Command(BaseCommand):
                 # builds related models and finds max level of related models
                 # and sets current model level to max+1
                 level = 1 + max(
-                    build(related_model) for related_model in forward_relation_models
+                    build(related_model)
+                    for related_model in forward_relation_models
                 )
 
             # adding curr models level to lookup table for later usage
@@ -194,7 +199,9 @@ class Command(BaseCommand):
 
         # populate graph with m2m models
         for m2m in m2m_models:
-            level = 1 + max(self.lookup_table[m2m[-1]], self.lookup_table[m2m[-2]])
+            level = 1 + max(
+                self.lookup_table[m2m[-1]], self.lookup_table[m2m[-2]]
+            )
 
             self.lookup_table[m2m[0]["fixture_label"]] = level
 
@@ -228,7 +235,9 @@ class Command(BaseCommand):
         pattern = r".*\/" + fixture_info["fixture_label"] + r"\..+"
 
         dirs_to_search = set(settings.FIXTURE_DIRS)
-        app_fixture_path = self.get_app_path(fixture_info["app_name"]) + "/fixtures"
+        app_fixture_path = (
+            self.get_app_path(fixture_info["app_name"]) + "/fixtures"
+        )
         dirs_to_search.add(app_fixture_path)
 
         for dir in dirs_to_search:
@@ -250,7 +259,9 @@ class Command(BaseCommand):
 
         return router.db_for_write(model)
 
-    def build_fixture_info(self, fixture_label, model_label, model_name, app_name):
+    def build_fixture_info(
+        self, fixture_label, model_label, model_name, app_name
+    ):
         return {
             "fixture_label": fixture_label,
             "model_label": model_label,
@@ -273,10 +284,8 @@ class Command(BaseCommand):
                 raise Exception(msg)
 
             if app in self.exclude:
-                msg = (
-                    "App '{}' can't be in both apps to load and excluded apps.".format(
-                        app
-                    )
+                msg = "App '{}' can't be in both apps to load and excluded apps.".format(
+                    app
                 )
                 raise Exception(msg)
 
