@@ -90,7 +90,7 @@ class Command(BaseCommand):
         # }
         self.graph = defaultdict(list)
         # {fixture_label: level}
-        lookup_table = dict()
+        self.lookup_table = dict()
         # [m2m_fixture_info, curr_model_fixture_label, related_model_fixture_label]
         m2m_models = []
 
@@ -102,8 +102,8 @@ class Command(BaseCommand):
             fixture_label = model_label.replace(".", "_")
 
             # check if curr model's level is already set
-            if fixture_label in lookup_table:
-                return lookup_table[fixture_label]
+            if fixture_label in self.lookup_table:
+                return self.lookup_table[fixture_label]
 
             forward_fields = model._meta._forward_fields_map
             # stores models to which current model has either onetoone or manytoone(ForeignKey) relation
@@ -169,7 +169,7 @@ class Command(BaseCommand):
                 )
 
             # adding curr models level to lookup table for later usage
-            lookup_table[fixture_label] = level
+            self.lookup_table[fixture_label] = level
 
             fixture_info = self.build_fixture_info(
                 fixture_label,
@@ -239,10 +239,13 @@ class Command(BaseCommand):
 
     def find_fixtures(self, fixture_info):
         fixture_files = set()
+
         pattern = r".*\/" + fixture_info["fixture_label"] + r"\..+"
+
         dirs_to_search = set(settings.FIXTURE_DIRS)
-        app_fixture_path = self.get_app_path(fixture_info['app_name']) + '/fixtures'
+        app_fixture_path = self.get_app_path(fixture_info["app_name"]) + "/fixtures"
         dirs_to_search.add(app_fixture_path)
+
         for dir in dirs_to_search:
             for root, _, files in os.walk(dir):
                 for file in files:
