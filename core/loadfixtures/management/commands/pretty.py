@@ -25,10 +25,10 @@ class Command(BaseCommand):
             "-t" + options["target-version"],
             "-l " + options["line-length"],
         ]
-        if not pylibcheck.checkPackage("black"):
-            raise Exception('Package "black" not found, install using pip.')
-        if not pylibcheck.checkPackage("isort"):
-            raise Exception('Package "isort" not found, install using pip')
+
+        for package in self.packages:
+            if not pylibcheck.checkPackage(package):
+                raise Exception('Package "{}" not found, install using pip.'.format(package))
 
         try:
             cmd = ["isort", *options["path"]]

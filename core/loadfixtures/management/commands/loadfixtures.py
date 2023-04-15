@@ -5,7 +5,7 @@ from collections import defaultdict
 from django.apps import apps
 from django.conf import settings
 from django.core.management import BaseCommand, call_command
-from django.db import models, router
+from django.db import router
 from django.utils.module_loading import import_string
 
 
@@ -61,13 +61,6 @@ class Command(BaseCommand):
         )
 
     def setup_fields(self):
-        manytomany = set(settings.LOAD_FIXTURES["MANYTOMANY"])
-        manytomany.add("django.db.models.ManyToManyField")
-        self.manytomany = set()
-
-        for field in manytomany:
-            self.manytomany.add(import_string(field))
-
         onetooneormany = set(settings.LOAD_FIXTURES["ONETOONEORMANY"])
         onetooneormany.update(
             ["django.db.models.ForeignKey", "django.db.models.OneToOneField"]
@@ -77,19 +70,31 @@ class Command(BaseCommand):
         for field in onetooneormany:
             self.onetooneormany.add(import_string(field))
 
+    def make_model_info(self):
+        self.models = defaultdict(dict)
+        for app, models in apps.all_models.items():
+            for model_name, model_class in models.items():
+                self.models[model_class] = {
+                    "fixture_label": model_class._meta.label_lower.replace(
+                        ".", "_"
+                    ),
+                    "model_label": model_class._meta.label,
+                    "app_label": app,
+                }
+
     def setup(self, options, *args):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
-        self.check_apps()
         self.fixtures = set(options["fixtures"])
-        self.setup_fields()
-
         del options["app_labels"]
         del options["fixtures"]
 
+        self.make_model_info()
+        self.setup_fields()
+
+        self.run_pre_build_checks()
         self.build_graph()
-        # depends on lookuptable, thus calling after building graph
-        self.check_fixtures()
+        self.run_post_build_checks()
 
     def handle(self, *args, **options):
         self.setup(options, *args)
@@ -100,162 +105,89 @@ class Command(BaseCommand):
         """
         Builds the relation graph of models.
         """
-        # model_label = %(app_name).%(model_name)
-        # fixture_info = {
+        # model_label = model._meta.label
+        # model_info = {
         #     'fixture_label':,
         #     'model_label':,
-        #     'model_name':,
-        #     'app_name':,
+        #     'app_label':,
         #     }
         # self.graph = {
-        # level : [fixure_info's]
+        # level : [model_info's]
         # }
         self.graph = defaultdict(list)
         # {fixture_label: level}
         self.lookup_table = dict()
-        # [m2m_fixture_info, curr_model_fixture_label, related_model_fixture_label]
-        m2m_models = []
 
         # puts the model in the specific level it belongs to in self.graph
         # and returns its level
-        def build(model):
-            model_label = model._meta.label_lower
-            app_name, model_name = model_label.split(".")
-            fixture_label = model_label.replace(".", "_")
-
-            # check if curr model's level is already set
-            if fixture_label in self.lookup_table:
-                return self.lookup_table[fixture_label]
+        def build(model, model_info):
+            if model_info["fixture_label"] in self.lookup_table:
+                return self.lookup_table[model_info["fixture_label"]]
 
             forward_fields = model._meta._forward_fields_map
-            # stores models to which current model has either onetoone or manytoone(ForeignKey) relation
             forward_relation_models = set()
-            # manytomany relations are set at last
 
-            for field_name, field in forward_fields.items():
-                if isinstance(field, tuple(self.manytomany)):
-                    # default m2m table name created by django
-                    default_m2m_model_label = model_label + "_" + field.attname
-                    default_m2m_model_name = (
-                        model_label.split(".")[-1] + "_" + field.attname
-                    )
-
-                    # if custom m2m model is given, it is mentioned in through attribute of field
-                    # if custom intermediate model is given
-                    # then we don't need to add that to m2m_models
-                    # because those models are available in apps.get_models()
-                    # so below the loop which is calling all models
-                    # will also call those explicit intermediate models
-                    # this if condition is only for intermediate models that are created by django
-                    # which won't appear in apps.get_models()
-                    try:
-                        m2m_field = getattr(model, field_name)
-                        getattr(m2m_field, "through")
-                    except AttributeError:
-                        m2m_fixture_label = default_m2m_model_label.replace(
-                            ".", "_"
-                        )
-                        related_model_fixture_label = (
-                            field.related_model._meta.label_lower.replace(
-                                ".", "_"
-                            )
-                        )
-
-                        # add m2m tables to self.m2m, at the end we will add these models to graph
-                        m2m_fixture_info = self.build_fixture_info(
-                            m2m_fixture_label,
-                            default_m2m_model_label,
-                            default_m2m_model_name,
-                            app_name,
-                        )
-
-                        m2m_models.append(
-                            [
-                                m2m_fixture_info,
-                                fixture_label,
-                                related_model_fixture_label,
-                            ]
-                        )
-
-                # relations with self are ignored because, django's loaddata command disables constraints
-                # while saving a fixture, and later checks the constraints
-                elif (
+            for _, field in forward_fields.items():
+                # relations with self are not considered because
+                # django's loaddata command, disables constraints
+                # while added fixtures, and runs constraint check
+                # after loading,
+                # also because we are using recursion
+                # this will create infinite loop
+                if (
                     isinstance(field, tuple(self.onetooneormany))
                     and field.related_model != model
                 ):
-                    forward_relation_models.add(field.related_model)
+                    forward_relation_models.add((field.related_model))
 
-            # if no onetoone or manytoone relations then its level is 0
             level = 0
+            # if no forward relation models then its level is 0
             if forward_relation_models:
-                # builds related models and finds max level of related models
-                # and sets current model level to max+1
                 level = 1 + max(
-                    build(related_model)
+                    build(related_model, self.models[related_model])
                     for related_model in forward_relation_models
                 )
 
-            # adding curr models level to lookup table for later usage
-            self.lookup_table[fixture_label] = level
+            # add curr models level to lookup_table for later usage
+            self.lookup_table[model_info["fixture_label"]] = level
 
-            fixture_info = self.build_fixture_info(
-                fixture_label,
-                model_label,
-                model_name,
-                app_name,
-            )
-
-            self.add_to_graph(fixture_info, level)
+            self.add_to_graph(level, model_info)
 
             return level
 
-        all_models = apps.get_models()
-        # calls all models, including explicit intermediate models
-        # but does not call intermediate models that django created
-        # that is taken care by m2m_models
-        for model in all_models:
-            build(model)
-
-        # populate graph with m2m models
-        for m2m in m2m_models:
-            level = 1 + max(
-                self.lookup_table[m2m[-1]], self.lookup_table[m2m[-2]]
-            )
-
-            self.lookup_table[m2m[0]["fixture_label"]] = level
-
-            self.add_to_graph(m2m[0], None)
+        for model, model_info in self.models.items():
+            build(model, model_info)
 
     @property
     def levels(self):
         try:
             levels = max(key for key in self.graph)
         except ValueError:
-            msg = "No fixtures to load."
-            raise Exception(msg)
-
-        return levels
+            self.stdout.write("No fixtures to load.")
+            exit()
+        else:
+            return levels
 
     def loaddata(self, *args, **options):
         for level in range(self.levels + 1):
-            for fixture_info in self.graph[level]:
-                self.load_fixtures(fixture_info, *args, **options)
+            for model_info in self.graph[level]:
+                self.load_fixtures(model_info, *args, **options)
 
-    def load_fixtures(self, fixture_info, *args, **options):
-        fixture_files = self.find_fixtures(fixture_info)
+    def load_fixtures(self, model_info, *args, **options):
+        fixture_files = self.find_fixtures(model_info)
         if options["database"] is None:
-            options["database"] = self.get_db(fixture_info["model_label"])
+            options["database"] = self.get_db(model_info["model_label"])
         for fixture in fixture_files:
             call_command("loaddata", fixture, **options)
 
-    def find_fixtures(self, fixture_info):
+    def find_fixtures(self, model_info):
         fixture_files = set()
 
-        pattern = r".*\/" + fixture_info["fixture_label"] + r"\..+"
+        pattern = r".*\/" + model_info["fixture_label"] + r"\..+"
 
         dirs_to_search = set(settings.FIXTURE_DIRS)
         app_fixture_path = (
-            self.get_app_path(fixture_info["app_name"]) + "/fixtures"
+            self.get_app_path(model_info["app_label"]) + "/fixtures"
         )
         dirs_to_search.add(app_fixture_path)
 
@@ -278,22 +210,20 @@ class Command(BaseCommand):
 
         return router.db_for_write(model)
 
-    def build_fixture_info(
-        self, fixture_label, model_label, model_name, app_name
-    ):
-        return {
-            "fixture_label": fixture_label,
-            "model_label": model_label,
-            "model_name": model_name,
-            "app_name": app_name,
-        }
+    def run_pre_build_checks(self):
+        self.check_apps()
+        self.check_fixtures_pre_build()
+
+    def run_post_build_checks(self):
+        self.check_fixtures_post_build()
 
     def check_apps(self):
         for app in self.app_labels:
             # not using apps.is_installed, because
-            # app_name is probably different from what it is in INSTALLED_APPS
+            # app_label is probably different from what it is in INSTALLED_APPS
             # this is the case if app is located in folder where settings file is present
             # this is possible if app is started using django-admin
+            # check if app is present in INSTALLED_APPS
             try:
                 apps.get_app_config(app)
             except LookupError:
@@ -302,43 +232,71 @@ class Command(BaseCommand):
                 )
                 raise Exception(msg)
 
+            # check if app is in both apps to load and apps to exclude
             if app in self.exclude:
                 msg = "App '{}' can't be in both apps to load and excluded apps.".format(
                     app
                 )
                 raise Exception(msg)
 
-    def check_fixtures(self):
+    def check_fixtures_post_build(self):
         for fixture in self.fixtures:
+            # check if it is in lookup lookup_table
             try:
                 self.lookup_table[fixture]
             except KeyError:
-                msg = "No fixture named '{}'".format(fixture)
+                msg = "Fixture '{}' not found. Does not belong to any model.".format(
+                    fixture
+                )
                 raise Exception(msg)
 
-    def add_to_graph(self, fixture_info, level):
-        # if user gave either apps or fixtures
-        # then graph of only those models is created
-        # although lookuptable is populated with all models
-        # if not graph of all models is built
-        if self.app_labels or self.fixtures:
-            if (
-                (
-                    fixture_info["app_name"] not in self.app_labels
-                    and fixture_info["fixture_label"] not in self.fixtures
-                )
-                or fixture_info["fixture_label"] in self.exclude
-                or fixture_info["app_name"] in self.exclude
-            ):
-                if (
-                    fixture_info["fixture_label"] in self.fixtures
-                    and fixture_info["app_name"] in self.exclude
-                ):
-                    msg = "Fixture {}'s app is in excluded apps.".format(
-                        fixture_info["fixture_label"]
+    def check_fixtures_pre_build(self):
+        for _, model_info in self.models.items():
+            fixture = model_info["fixture_label"]
+
+            if fixture in self.fixtures:
+                if fixture in self.exclude:
+                    msg = "Fixture '{}' can't be in fixtures to load and in excluded fixtures.".format(
+                        fixture
                     )
                     raise Exception(msg)
-                return level
 
-        # insert curr models' fixture_info in graph
-        self.graph[level].append(fixture_info)
+                if model_info["model_label"] in self.exclude:
+                    msg = (
+                        "Fixture {}'s model '{}' is in excluded models.".format(
+                            fixture, model_info["model_label"]
+                        )
+                    )
+                    raise Exception(msg)
+
+                if model_info["app_label"] in self.exclude:
+                    msg = "Fixture {}'s app '{}' is in excluded apps.".format(
+                        fixture, model_info["app_label"]
+                    )
+                    raise Exception(msg)
+
+    def add_to_graph(self, level, model_info):
+        # if app or model or fixture is excluded,
+        # then those are not added to graph
+        if (
+            model_info["fixture_label"] in self.exclude
+            or model_info["model_label"] in self.exclude
+            or model_info["app_label"] in self.exclude
+        ):
+            return
+        # if user explicitly gives fixtures or/and app_labels
+        # then only add those to graph
+        if self.app_labels or self.fixtures:
+            if (
+                model_info["app_label"] not in self.app_labels
+                and model_info["fixture_label"] not in self.fixtures
+            ):
+                return
+
+        self.graph[level].append(model_info)
+
+    def pretty_print_graph(self):
+        for level, model_infos in self.graph.items():
+            print("Level : ", level)
+            for model_info in model_infos:
+                print(model_info)
