@@ -6,6 +6,7 @@ from django.apps import apps
 from django.conf import settings
 from django.core.management import BaseCommand, call_command
 from django.db import models, router
+from django.utils.module_loading import import_string
 
 
 class Command(BaseCommand):
@@ -59,11 +60,29 @@ class Command(BaseCommand):
             help="Format of serialized data when reading from stdin.",
         )
 
+    def setup_fields(self):
+        manytomany = set(settings.LOAD_FIXTURES["MANYTOMANY"])
+        manytomany.add("django.db.models.ManyToManyField")
+        self.manytomany = set()
+
+        for field in manytomany:
+            self.manytomany.add(import_string(field))
+
+        onetooneormany = set(settings.LOAD_FIXTURES["ONETOONEORMANY"])
+        onetooneormany.update(
+            ["django.db.models.ForeignKey", "django.db.models.OneToOneField"]
+        )
+        self.onetooneormany = set()
+
+        for field in onetooneormany:
+            self.onetooneormany.add(import_string(field))
+
     def setup(self, options, *args):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
         self.check_apps()
         self.fixtures = set(options["fixtures"])
+        self.setup_fields()
 
         del options["app_labels"]
         del options["fixtures"]
@@ -114,7 +133,7 @@ class Command(BaseCommand):
             # manytomany relations are set at last
 
             for field_name, field in forward_fields.items():
-                if isinstance(field, models.ManyToManyField):
+                if isinstance(field, tuple(self.manytomany)):
                     # default m2m table name created by django
                     default_m2m_model_label = model_label + "_" + field.attname
                     default_m2m_model_name = (
@@ -161,7 +180,7 @@ class Command(BaseCommand):
                 # relations with self are ignored because, django's loaddata command disables constraints
                 # while saving a fixture, and later checks the constraints
                 elif (
-                    isinstance(field, (models.ForeignKey, models.OneToOneField))
+                    isinstance(field, tuple(self.onetooneormany))
                     and field.related_model != model
                 ):
                     forward_relation_models.add(field.related_model)
