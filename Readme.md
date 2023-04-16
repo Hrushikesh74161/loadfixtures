@@ -14,7 +14,7 @@ _loadfixtures_ is a command for loading fixtures in django which is built on top
 
 Internally a structure/graph is built which is logically equivalent to a topologically sorted graph.
 
-This graph is built using the information in models.\_meta.forward_fields_map which has all the forward fields of a model.
+This graph is built using the information in models.\_meta.\_forward_fields_map which has all the forward fields of a model.
 
 All models or sourced from apps.all_models, which also has the intermediate models created by django for many to many fields. So no need to worry about those.
 
@@ -44,7 +44,11 @@ Fixtures for a model should be stored in fixtures/ folder in its app or in the f
 
 You can directly run python manage.py loadfixtures, it will load fixtures of all models defined in your project, including models in third party packages(if models exist), and django.
 
+<<<<<<< HEAD
 Optionally we can only load fixtures belonging to a specific model(s) or a specif app(s). Use tags -m and -a respectively.
+=======
+Optionally we can only load fixtures belonging to a specific model(s) or a specific app(s). Use tags -m and -a respectively.
+>>>>>>> 3770e7a (Updated readme to match changes done in previous commit)
 
 To exclude a model(s) or/and app(s) use -e tag.
 
