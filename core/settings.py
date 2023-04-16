@@ -84,4 +84,4 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOAD_FIXTURES = {"MANYTOMANY": [], "ONETOONEORMANY": []}
+LOAD_FIXTURES = {"ONETOONEORMANY": []}
