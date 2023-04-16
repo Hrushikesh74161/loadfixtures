@@ -44,7 +44,7 @@ Fixtures for a model should be stored in fixtures/ folder in its app or in the f
 
 You can directly run python manage.py loadfixtures, it will load fixtures of all models defined in your project, including models in third party packages(if models exist), and django.
 
-Optionally we can only load fixtures belonging to a specific model(s) or a specif app(s). Use tags -f and -a respectively.
+Optionally we can only load fixtures belonging to a specific model(s) or a specif app(s). Use tags -m and -a respectively.
 
 To exclude a model(s) or/and app(s) use -e tag.
 
@@ -60,7 +60,7 @@ LOAD_FIXTURES = {
 'ONETOONEORMANY': []
 }
 
-If you use any relation fields that are not part of django, then those should be listed in ONETOONEORMANY setting.
+If you use any relation(only foreign keys or onetoone fields, no need to mention manytomany fields) fields that are not part of django, then those should be listed in ONETOONEORMANY setting.
 
 Ex: TreeForeignKey from mptt models. Then
 
@@ -202,13 +202,13 @@ Every Model in a level depends on atleast one model in its below level.
 
 - auth.Group_permissions
 
-### python manage.py -f auth_user
+### python manage.py -m auth.User
 
 > Level: 0
 
 - auth.User
 
-### python manage.py -f inventory_product -f inventory_stock -f auth_user
+### python manage.py -m inventory.Product -m inventory.Stock -m auth.User
 
 > Level: 0
 
