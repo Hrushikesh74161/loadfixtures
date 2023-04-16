@@ -1,11 +1,13 @@
-__author__ = 'G. Hrushikesh Reddy <hrushi74161@gmail.com>'
+__author__ = "G. Hrushikesh Reddy <hrushi74161@gmail.com>"
+
 import os
 import re
 from collections import defaultdict
 
 from django.apps import apps
 from django.conf import settings
-from django.core.management import BaseCommand, call_command
+from django.core.management import BaseCommand, CommandError, call_command
+from django.core.management.utils import parse_apps_and_model_labels
 from django.db import router
 from django.utils.module_loading import import_string
 
@@ -15,12 +17,12 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--fixture",
-            "-f",
+            "--model",
+            "-m",
             action="append",
             default=[],
-            dest="fixtures",
-            help="Fixture labels to load.",
+            dest="fixture_models",
+            help="Models to load.",
         )
         parser.add_argument(
             "--database",
@@ -63,7 +65,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--dry-run",
             action="store_true",
-            help = "Outputs which fixtures are going to be loaded, without loading them."
+            help="Outputs which fixtures are going to be loaded, without loading them.",
         )
 
     def setup_fields(self):
@@ -91,10 +93,10 @@ class Command(BaseCommand):
     def setup(self, options, *args):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
-        self.fixtures = set(options["fixtures"])
+        self.fixture_models = set(options["fixture_models"])
         self.is_dry_run = options["dry_run"]
         del options["app_labels"]
-        del options["fixtures"]
+        del options["fixture_models"]
         del options["dry_run"]
 
         self.make_model_info()
@@ -102,7 +104,6 @@ class Command(BaseCommand):
 
         self.run_pre_build_checks()
         self.build_graph()
-        self.run_post_build_checks()
 
     def handle(self, *args, **options):
         self.setup(options, *args)
@@ -194,15 +195,15 @@ class Command(BaseCommand):
 
     def dry_run(self, model_info, fixtures, **options):
         if fixtures:
-            self.stdout.write('App: {}'.format(model_info["app_label"]))
-            self.stdout.write('Model: {}'.format(model_info['model_label']))
-            self.stdout.write('Database: {}'.format(options['database']))
-            self.stdout.write('Fixture(s):')
+            self.stdout.write("App: {}".format(model_info["app_label"]))
+            self.stdout.write("Model: {}".format(model_info["model_label"]))
+            self.stdout.write("Database: {}".format(options["database"]))
+            self.stdout.write("Fixture(s):")
             for fixture in fixtures:
                 self.stdout.write(fixture)
-            self.stdout.write('\n')
+            self.stdout.write("\n")
 
-    def loaddata(self, fixtures, *args,**options):
+    def loaddata(self, fixtures, *args, **options):
         if fixtures:
             call_command("loaddata", *fixtures, **options)
 
@@ -238,10 +239,8 @@ class Command(BaseCommand):
 
     def run_pre_build_checks(self):
         self.check_apps()
-        self.check_fixtures_pre_build()
-
-    def run_post_build_checks(self):
-        self.check_fixtures_post_build()
+        self.check_fixture_models()
+        self.check_exclude()
 
     def check_apps(self):
         for app in self.app_labels:
@@ -256,66 +255,49 @@ class Command(BaseCommand):
                 msg = "App '{}' is either not in INSTALLED_APPS or does not exist.".format(
                     app
                 )
-                raise Exception(msg)
+                raise CommandError(msg)
 
             # check if app is in both apps to load and apps to exclude
             if app in self.exclude:
                 msg = "App '{}' can't be in both apps to load and excluded apps.".format(
                     app
                 )
-                raise Exception(msg)
+                raise CommandError(msg)
 
-    def check_fixtures_post_build(self):
-        for fixture in self.fixtures:
-            # check if it is in lookup lookup_table
+    def check_fixture_models(self):
+        for model in self.fixture_models:
             try:
-                self.lookup_table[fixture]
-            except KeyError:
-                msg = "Fixture '{}' not found. Does not belong to any model.".format(
-                    fixture
+                apps.get_model(model)
+            except LookupError:
+                msg = "Model {} doesnot exist.".format(model)
+                raise CommandError(msg)
+            except ValueError:
+                msg = "Not a valid model name {}".format(model)
+                raise CommandError(msg)
+
+            if model in self.exclude:
+                msg = "Model {} can't be in both models to load and in excluded models.".format(
+                    model
                 )
-                raise Exception(msg)
+                raise CommandError(msg)
 
-    def check_fixtures_pre_build(self):
-        for _, model_info in self.models.items():
-            fixture = model_info["fixture_label"]
-
-            if fixture in self.fixtures:
-                if fixture in self.exclude:
-                    msg = "Fixture '{}' can't be in fixtures to load and in excluded fixtures.".format(
-                        fixture
-                    )
-                    raise Exception(msg)
-
-                if model_info["model_label"] in self.exclude:
-                    msg = (
-                        "Fixture {}'s model '{}' is in excluded models.".format(
-                            fixture, model_info["model_label"]
-                        )
-                    )
-                    raise Exception(msg)
-
-                if model_info["app_label"] in self.exclude:
-                    msg = "Fixture {}'s app '{}' is in excluded apps.".format(
-                        fixture, model_info["app_label"]
-                    )
-                    raise Exception(msg)
+    def check_exclude(self):
+        parse_apps_and_model_labels(self.exclude)
 
     def add_to_graph(self, level, model_info):
-        # if app or model or fixture is excluded,
+        # if app or model is excluded,
         # then those are not added to graph
         if (
-            model_info["fixture_label"] in self.exclude
-            or model_info["model_label"] in self.exclude
+            model_info["model_label"] in self.exclude
             or model_info["app_label"] in self.exclude
         ):
             return
-        # if user explicitly gives fixtures or/and app_labels
+        # if user explicitly gives model or/and app_labels
         # then only add those to graph
-        if self.app_labels or self.fixtures:
+        if self.app_labels or self.fixture_models:
             if (
                 model_info["app_label"] not in self.app_labels
-                and model_info["fixture_label"] not in self.fixtures
+                and model_info["model_label"] not in self.fixture_models
             ):
                 return
 
