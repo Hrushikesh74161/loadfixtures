@@ -208,7 +208,7 @@ Every Model in a level depends on atleast one model in its below level.
 
 - auth.User
 
-### python manage.py -f inventory.Product -f inventory.Stock -f auth.User
+### python manage.py -f inventory_product -f inventory_stock -f auth_user
 
 > Level: 0
 
