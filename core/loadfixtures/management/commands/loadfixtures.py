@@ -209,7 +209,7 @@ class Command(BaseCommand):
     def find_fixtures(self, model_info):
         fixture_files = set()
 
-        pattern = r".*\/" + model_info["fixture_label"] + r"\..+"
+        pattern = r".*\/" + model_info["fixture_label"] + r"(?:_\d+)?\..+"
 
         dirs_to_search = set(settings.FIXTURE_DIRS)
         app_fixture_path = (
