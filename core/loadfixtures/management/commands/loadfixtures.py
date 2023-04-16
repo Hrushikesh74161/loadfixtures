@@ -59,6 +59,11 @@ class Command(BaseCommand):
             "--format",
             help="Format of serialized data when reading from stdin.",
         )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            help = "Outputs which fixtures are going to be loaded, without loading them."
+        )
 
     def setup_fields(self):
         onetooneormany = set(settings.LOAD_FIXTURES["ONETOONEORMANY"])
@@ -86,8 +91,10 @@ class Command(BaseCommand):
         self.exclude = set(options["exclude"])
         self.app_labels = set(options["app_labels"])
         self.fixtures = set(options["fixtures"])
+        self.is_dry_run = options["dry_run"]
         del options["app_labels"]
         del options["fixtures"]
+        del options["dry_run"]
 
         self.make_model_info()
         self.setup_fields()
@@ -98,7 +105,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.setup(options, *args)
-        self.loaddata(*args, **options)
+        self.load(*args, **options)
 
     # topological sorting
     def build_graph(self):
@@ -168,17 +175,35 @@ class Command(BaseCommand):
         else:
             return levels
 
-    def loaddata(self, *args, **options):
+    def load(self, *args, **options):
         for level in range(self.levels + 1):
             for model_info in self.graph[level]:
-                self.load_fixtures(model_info, *args, **options)
+                fixtures = self.get_fixtures_and_db(model_info, options)
+                if self.is_dry_run:
+                    self.dry_run(model_info, fixtures, **options)
+                else:
+                    self.loaddata(fixtures, *args, **options)
 
-    def load_fixtures(self, model_info, *args, **options):
+    def get_fixtures_and_db(self, model_info, options):
         fixture_files = self.find_fixtures(model_info)
         if options["database"] is None:
             options["database"] = self.get_db(model_info["model_label"])
-        for fixture in fixture_files:
-            call_command("loaddata", fixture, **options)
+
+        return fixture_files
+
+    def dry_run(self, model_info, fixtures, **options):
+        if fixtures:
+            self.stdout.write('App: {}'.format(model_info["app_label"]))
+            self.stdout.write('Model: {}'.format(model_info['model_label']))
+            self.stdout.write('Database: {}'.format(options['database']))
+            self.stdout.write('Fixture(s):')
+            for fixture in fixtures:
+                self.stdout.write(fixture)
+            self.stdout.write('\n')
+
+    def loaddata(self, fixtures, *args,**options):
+        if fixtures:
+            call_command("loaddata", *fixtures, **options)
 
     def find_fixtures(self, model_info):
         fixture_files = set()
