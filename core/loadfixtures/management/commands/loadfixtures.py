@@ -1,3 +1,4 @@
+__author__ = 'G. Hrushikesh Reddy <hrushi74161@gmail.com>'
 import os
 import re
 from collections import defaultdict
