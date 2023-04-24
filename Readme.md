@@ -22,8 +22,6 @@ Using this graph, _loadfixtures_ knows which models to load first, so that later
 
 ## Installation and Usage
 
----
-
 ### Installation
 
 ---
@@ -44,11 +42,7 @@ Fixtures for a model should be stored in fixtures/ folder in its app or in the f
 
 You can directly run python manage.py loadfixtures, it will load fixtures of all models defined in your project, including models in third party packages(if models exist), and django.
 
-<<<<<<< HEAD
-Optionally we can only load fixtures belonging to a specific model(s) or a specif app(s). Use tags -m and -a respectively.
-=======
 Optionally we can only load fixtures belonging to a specific model(s) or a specific app(s). Use tags -m and -a respectively.
->>>>>>> 3770e7a (Updated readme to match changes done in previous commit)
 
 To exclude a model(s) or/and app(s) use -e tag.
 
